@@ -181,12 +181,13 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first
 			// list request will return the full response.
 			pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
+				//list 资源
 				return r.listerWatcher.List(opts)
 			}))
 			if r.WatchListPageSize != 0 {
 				pager.PageSize = r.WatchListPageSize
 			}
-			// Pager falls back to full list if paginated list calls fail due to an "Expired" error.
+			// Pager falls back to full list if paginated(分页) list calls fail due to an "Expired" error.
 			list, err = pager.List(context.Background(), options)
 			close(listCh)
 		}()
@@ -212,6 +213,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			return fmt.Errorf("%s: Unable to understand list result %#v (%v)", r.name, list, err)
 		}
 		initTrace.Step("Objects extracted")
+		// 更新存储(Delta FIFO)中的 items
 		if err := r.syncWith(items, resourceVersion); err != nil {
 			return fmt.Errorf("%s: Unable to sync list result: %v", r.name, err)
 		}
@@ -272,6 +274,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			AllowWatchBookmarks: false,
 		}
 
+		// 开始 watch
 		w, err := r.listerWatcher.Watch(options)
 		if err != nil {
 			switch err {
@@ -297,6 +300,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			return nil
 		}
 
+		// w 交给 watchHandler处理
 		if err := r.watchHandler(w, &resourceVersion, resyncerrc, stopCh); err != nil {
 			if err != errorStopRequested {
 				klog.Warningf("%s: watch of %v ended with: %v", r.name, r.expectedType, err)
@@ -348,6 +352,8 @@ loop:
 				continue
 			}
 			newResourceVersion := meta.GetResourceVersion()
+			// 根据事件类型处理，有 Added Modified Deleted 3种
+			// 3 种事件分别对应 store 中的增改删操作
 			switch event.Type {
 			case watch.Added:
 				err := r.store.Add(event.Object)
