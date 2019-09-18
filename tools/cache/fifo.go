@@ -25,6 +25,7 @@ import (
 
 // PopProcessFunc is passed to Pop() method of Queue interface.
 // It is supposed to process the element popped from the queue.
+// 作用仅仅是一个类型转换, 真正调用的方法是controller.config.Process
 type PopProcessFunc func(interface{}) error
 
 // ErrRequeue may be returned by a PopProcessFunc to safely requeue
