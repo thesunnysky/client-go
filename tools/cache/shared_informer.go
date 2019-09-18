@@ -245,6 +245,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	fifo := NewDeltaFIFO(MetaNamespaceKeyFunc, s.indexer)
 
 	cfg := &Config{
+		// DeltaFIFO
 		Queue:            fifo,
 		ListerWatcher:    s.listerWatcher,
 		ObjectType:       s.objectType,
@@ -252,6 +253,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		RetryOnError:     false,
 		ShouldResync:     s.processor.shouldResync,
 
+		//core
 		Process: s.HandleDeltas,
 	}
 
@@ -259,6 +261,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		s.startedLock.Lock()
 		defer s.startedLock.Unlock()
 
+		// 创建 Informer
 		s.controller = New(cfg)
 		s.controller.(*controller).clock = s.clock
 		s.started = true
@@ -270,6 +273,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	defer wg.Wait()              // Wait for Processor to stop
 	defer close(processorStopCh) // Tell Processor to stop
 	wg.StartWithChannel(processorStopCh, s.cacheMutationDetector.Run)
+	//启动informer内部所有listener的run()和pop()方法
 	wg.StartWithChannel(processorStopCh, s.processor.run)
 
 	defer func() {
@@ -277,6 +281,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		defer s.startedLock.Unlock()
 		s.stopped = true // Don't want any new listeners
 	}()
+	//run informer
 	s.controller.Run(stopCh)
 }
 
@@ -394,6 +399,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 	}
 }
 
+//core func
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	s.blockDeltas.Lock()
 	defer s.blockDeltas.Unlock()
@@ -404,18 +410,22 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 		case Sync, Added, Updated:
 			isSync := d.Type == Sync
 			s.cacheMutationDetector.AddObject(d.Object)
+			// 更新的都是sharedIndexInformer.indexer
 			if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
+				//update
 				if err := s.indexer.Update(d.Object); err != nil {
 					return err
 				}
 				s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
 			} else {
+				//add
 				if err := s.indexer.Add(d.Object); err != nil {
 					return err
 				}
 				s.processor.distribute(addNotification{newObj: d.Object}, isSync)
 			}
 		case Deleted:
+			//delete
 			if err := s.indexer.Delete(d.Object); err != nil {
 				return err
 			}
@@ -465,6 +475,7 @@ func (p *sharedProcessor) distribute(obj interface{}, sync bool) {
 	}
 }
 
+//启动informer内部所有listener的run()和pop() 方法
 func (p *sharedProcessor) run(stopCh <-chan struct{}) {
 	func() {
 		p.listenersLock.RLock()
@@ -517,6 +528,7 @@ func (p *sharedProcessor) resyncCheckPeriodChanged(resyncCheckPeriod time.Durati
 }
 
 type processorListener struct {
+	//ques: 这两个chan的作用?
 	nextCh chan interface{}
 	addCh  chan interface{}
 
@@ -560,44 +572,62 @@ func (p *processorListener) add(notification interface{}) {
 	p.addCh <- notification
 }
 
+//ques: 哪里来调用这个pop
 func (p *processorListener) pop() {
 	defer utilruntime.HandleCrash()
 	defer close(p.nextCh) // Tell .run() to stop
 
+	// 这个 chan 是没有初始化的
 	var nextCh chan<- interface{}
+	// 可以接收任意类型，其实是对应前面提到的 addNotification 等
 	var notification interface{}
+	// for 循环套 select 是比较常规的写法
 	for {
 		select {
+		//第一遍执行到这里的时候由于 nexth 没有初始化，所以这里会阻塞(和notification有没有值没有关系，notification哪怕是nil也可以写入 chan interface{} 类型的 channel)
 		case nextCh <- notification:
 			// Notification dispatched
 			var ok bool
+			// 第二次循环，下面一个case运行过之后才有这里的逻辑
 			notification, ok = p.pendingNotifications.ReadOne()
 			if !ok { // Nothing to pop
+				// 将 channel 指向 nil 相当于初始化的逆操作，会使得这个 case 条件阻塞
 				nextCh = nil // Disable this select case
 			}
+
+		// 这里是 for 首次执行逻辑的入口
 		case notificationToAdd, ok := <-p.addCh:
 			if !ok {
 				return
 			}
 			if notification == nil { // No notification to pop (and pendingNotifications is empty)
 				// Optimize the case - skip adding to pendingNotifications
+				// 如果是 nil，也就是第一个通知过来的时候，这时不需要用到缓存(和下面else相对)
+				// 赋值给 notification，这样上面一个 case 在接下来的一轮循化中就可以读到了
 				notification = notificationToAdd
+				// 相当于复制引用，nextCh 就指向了 p.nextCh，使得上面 case 写 channel 的时候本质上操作了 p.nextCh，
+				// 从而 run 能够读到 p.nextCh 中的信号
 				nextCh = p.nextCh
 			} else { // There is already a notification waiting to be dispatched
+				// 处理到这里的时候，其实第一个 case 已经有了首个 notification，这里的逻辑是一下子来了太多 notification
+				// 就往 pendingNotifications 缓存，在第一个 case 中 有对应的 ReadOne()操作
 				p.pendingNotifications.WriteOne(notificationToAdd)
 			}
 		}
 	}
 }
 
+//Ques: 这里的OnUpdate, OnAdd...方法只是来像controller的workqueue中添加event的,在具体的operator中实现的时候, 需要
+//controller单独实现这个OnUpdate和OnAdd吗?
 func (p *processorListener) run() {
 	// this call blocks until the channel is closed.  When a panic happens during the notification
 	// we will catch it, **the offending item will be skipped!**, and after a short delay (one second)
 	// the next notification will be attempted.  This is usually better than the alternative of never
 	// delivering again.
 	stopCh := make(chan struct{})
-	wait.Until(func() {
+	wait.Until(func() {		 // 一分钟执行一次这个 func()
 		// this gives us a few quick retries before a long pause and then a few more quick retries
+		// 一分钟内的又有几次重试
 		err := wait.ExponentialBackoff(retry.DefaultRetry, func() (bool, error) {
 			for next := range p.nextCh {
 				switch notification := next.(type) {
