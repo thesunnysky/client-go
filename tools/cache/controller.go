@@ -304,6 +304,7 @@ func NewInformer(
 //  * h is the object you want notifications sent to.
 //  * indexers is the indexer for the received object type.
 //
+//core path
 func NewIndexerInformer(
 	lw ListerWatcher,
 	objType runtime.Object,

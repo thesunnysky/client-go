@@ -94,6 +94,7 @@ func WaitForCertificate(ctx context.Context, client certificatesclient.Certifica
 			return client.Watch(options)
 		},
 	}
+	//core path
 	event, err := watchtools.UntilWithSync(
 		ctx,
 		lw,

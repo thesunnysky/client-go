@@ -241,6 +241,7 @@ func (m *manager) Stop() {
 	m.stopped = true
 }
 
+//entry point
 // Start will start the background work of rotating the certificates.
 func (m *manager) Start() {
 	// Certificate rotation depends on access to the API server certificate

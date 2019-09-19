@@ -126,6 +126,7 @@ func Until(ctx context.Context, initialResourceVersion string, watcherClient cac
 // particular object, not between more of them even it's the same resource.
 // The most frequent usage would be a command that needs to watch the "state of the world" and should't fail, like:
 // waiting for object reaching a state, "small" controllers, ...
+//core path
 func UntilWithSync(ctx context.Context, lw cache.ListerWatcher, objType runtime.Object, precondition PreconditionFunc, conditions ...ConditionFunc) (*watch.Event, error) {
 	indexer, informer, watcher, done := NewIndexerInformerWatcher(lw, objType)
 	// We need to wait for the internal informers to fully stop so it's easier to reason about

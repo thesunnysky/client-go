@@ -239,6 +239,7 @@ type deleteNotification struct {
 	oldObj interface{}
 }
 
+//core
 func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 
