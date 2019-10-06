@@ -413,7 +413,6 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 //core func
 // 更新sharedIndexInformer的indexer内存储的Obj
 // 将入参的ojb distributed， 最终将有informer的ResourceEventHandler方法处理（处理 add，update，delete）
-
 //called by:
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	s.blockDeltas.Lock()

@@ -120,7 +120,6 @@ var internalPackages = []string{"client-go/tools/cache/"}
 
 // Run starts a watch and handles watch events. Will restart the watch if it is closed.
 // Run will exit when stopCh is closed.
-
 //Reflector的启动方法
 func (r *Reflector) Run(stopCh <-chan struct{}) {
 	klog.V(3).Infof("Starting reflector %v (%s) from %s", r.expectedType, r.resyncPeriod, r.name)
@@ -212,6 +211,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		}
 		resourceVersion = listMetaInterface.GetResourceVersion()
 		initTrace.Step("Resource version extracted")
+		// 提取 items
 		items, err := meta.ExtractList(list)
 		if err != nil {
 			return fmt.Errorf("%s: Unable to understand list result %#v (%v)", r.name, list, err)
@@ -344,6 +344,7 @@ loop:
 			return errorStopRequested
 		case err := <-errc:
 			return err
+		// watch 返回值中的一个 channel
 		case event, ok := <-w.ResultChan():		//从watch的ResultChan中获取event
 			if !ok {
 				break loop
@@ -362,7 +363,7 @@ loop:
 			}
 			newResourceVersion := meta.GetResourceVersion()
 			// 根据事件类型处理，有 Added Modified Deleted 3种
-			// 3 种事件分别对应 store(实际上是Controller中的Queue，也就是Delta_Fifo)中的增改删操作
+			// 3 种事件分别对应 store(实际上是Controller中的Queue，也就是DeltaFIFO)中的增改删操作
 			switch event.Type {
 			case watch.Added:
 				err := r.store.Add(event.Object)

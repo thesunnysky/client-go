@@ -124,6 +124,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	var wg wait.Group
 	defer wg.Wait()
 
+	// 启动Reflector
 	wg.StartWithChannel(stopCh, r.Run)
 
 	//这里启动processLoop方法
