@@ -320,11 +320,12 @@ func (r *Reflector) syncWith(items []runtime.Object, resourceVersion string) err
 }
 
 // watchHandler watches w and keeps *resourceVersion up to date.
+// 有变化的资源添加到 Delta FIFO 中
 func (r *Reflector) watchHandler(w watch.Interface, resourceVersion *string, errc chan error, stopCh <-chan struct{}) error {
 	start := r.clock.Now()
 	eventCount := 0
 
-	// Stopping the watcher should be idempotent and if we return from this function there's no way
+	// Stopping the watcher should be idempotent(幂等) and if we return from this function there's no way
 	// we're coming back in with the same watch interface.
 	defer w.Stop()
 
