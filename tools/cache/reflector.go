@@ -184,7 +184,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first
 			// list request will return the full response.
 			pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
-				//list 资源
+				//list 资源, 这也是Reflector唯一的一次调用ListerWatcher.List方法
 				return r.listerWatcher.List(opts)
 			}))
 			if r.WatchListPageSize != 0 {
@@ -245,6 +245,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			case <-cancelCh:
 				return
 			}
+			//DeltaFIFO和LocalStore之间的resync机制
 			if r.ShouldResync == nil || r.ShouldResync() {
 				klog.V(4).Infof("%s: forcing resync", r.name)
 				if err := r.store.Resync(); err != nil {

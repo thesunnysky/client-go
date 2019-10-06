@@ -412,6 +412,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 
 //core func
 // 更新sharedIndexInformer的indexer内存储的Obj
+//	这其中还包含了LocalStore和DeltaFIFO之间的resync机制
 // 将入参的ojb distributed， 最终将有informer的ResourceEventHandler方法处理（处理 add，update，delete）
 //called by:
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
@@ -422,14 +423,17 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	for _, d := range obj.(Deltas) {
 		switch d.Type {
 		case Sync, Added, Updated:
+			//isSync表示当前的Event是DeltaFIFO和LocalStore之间在进行resync
 			isSync := d.Type == Sync
 			s.cacheMutationDetector.AddObject(d.Object)
 			// 更新的都是sharedIndexInformer.indexer
+			// 可以看到这里同时更新LocalStore和DeltaFIFO
 			if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
 				//update
 				if err := s.indexer.Update(d.Object); err != nil {
 					return err
 				}
+				//distribute event,最终将由ResourceEventHandler处理
 				s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
 			} else {
 				//add
@@ -455,7 +459,8 @@ type sharedProcessor struct {
 	//informer注册的没有给ResourceEventHandler都会被包装成一个processorListener,
 	//内部的handler就是具体的ResourceEventHandler方法
 	listeners        []*processorListener
-	syncingListeners []*processorListener //和上面的不带sync的Listener有什么区别
+	//在DeltaFIFO和LocalStore进行resync时会用到, syncingListener记录的就是需要resync的listener
+	syncingListeners []*processorListener
 	clock            clock.Clock
 	wg               wait.Group
 }
