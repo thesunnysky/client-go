@@ -179,6 +179,10 @@ func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool
 
 type sharedIndexInformer struct {
 	indexer    Indexer
+	//informer自己定义的一个controller，并不是k8s传统意义上的controller
+	// Controller中引用了Reflector
+	// controller中的Run()启动了Reflector，同时也启动了processLoop(),不停的从DeltaFIFO中获取event并调用
+	// informer的ResourceEventHandler来处理；
 	controller Controller
 
 	processor             *sharedProcessor
@@ -239,7 +243,11 @@ type deleteNotification struct {
 	oldObj interface{}
 }
 
-//core
+//Informer的启动入口
+// 1.初始化了Config
+// 2.通过Config new了Controller
+// 启动informer内部所有listener的run()和pop()方法
+// 3.启动了Controller的Run方法
 func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 
@@ -254,7 +262,8 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		RetryOnError:     false,
 		ShouldResync:     s.processor.shouldResync,
 
-		//core
+		//core, sharedIndexInformer的HandleDeltas
+		//目前看到的比较中重要的调用是Controller.Run() -> processLoop() -> Process()
 		Process: s.HandleDeltas,
 	}
 
@@ -329,6 +338,7 @@ func (s *sharedIndexInformer) GetController() Controller {
 	return &dummyController{informer: s}
 }
 
+//core, 在实现CRD自己的controller的informer的时候，都是通过该函数向informer来注册自己的ResourceEventHandler方法
 func (s *sharedIndexInformer) AddEventHandler(handler ResourceEventHandler) {
 	s.AddEventHandlerWithResyncPeriod(handler, s.defaultEventHandlerResyncPeriod)
 }
@@ -401,6 +411,10 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 }
 
 //core func
+// 更新sharedIndexInformer的indexer内存储的Obj
+// 将入参的ojb distributed， 最终将有informer的ResourceEventHandler方法处理（处理 add，update，delete）
+
+//called by:
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	s.blockDeltas.Lock()
 	defer s.blockDeltas.Unlock()
@@ -439,8 +453,10 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 type sharedProcessor struct {
 	listenersStarted bool
 	listenersLock    sync.RWMutex
+	//informer注册的没有给ResourceEventHandler都会被包装成一个processorListener,
+	//内部的handler就是具体的ResourceEventHandler方法
 	listeners        []*processorListener
-	syncingListeners []*processorListener
+	syncingListeners []*processorListener //和上面的不带sync的Listener有什么区别
 	clock            clock.Clock
 	wg               wait.Group
 }
@@ -461,12 +477,14 @@ func (p *sharedProcessor) addListenerLocked(listener *processorListener) {
 	p.syncingListeners = append(p.syncingListeners, listener)
 }
 
+//在sharedIndexInformer.HandleDeltas()中被调用
 func (p *sharedProcessor) distribute(obj interface{}, sync bool) {
 	p.listenersLock.RLock()
 	defer p.listenersLock.RUnlock()
 
 	if sync {
 		for _, listener := range p.syncingListeners {
+			//向listener中add notification
 			listener.add(obj)
 		}
 	} else {
@@ -533,6 +551,7 @@ type processorListener struct {
 	nextCh chan interface{}
 	addCh  chan interface{}
 
+	//也就是在初始化sharedInformer的时候添加的ResourceEventHandler，包括：OnAdd，OnUpdate，OnDelete
 	handler ResourceEventHandler
 
 	// pendingNotifications is an unbounded ring buffer that holds all notifications not yet distributed.
@@ -569,11 +588,11 @@ func newProcessListener(handler ResourceEventHandler, requestedResyncPeriod, res
 	return ret
 }
 
+//core, 向processListener中增加新的notification
 func (p *processorListener) add(notification interface{}) {
 	p.addCh <- notification
 }
 
-//ques: 哪里来调用这个pop
 func (p *processorListener) pop() {
 	defer utilruntime.HandleCrash()
 	defer close(p.nextCh) // Tell .run() to stop
@@ -583,6 +602,7 @@ func (p *processorListener) pop() {
 	// 可以接收任意类型，其实是对应前面提到的 addNotification 等
 	var notification interface{}
 	// for 循环套 select 是比较常规的写法
+	// processorListener的work loop
 	for {
 		select {
 		//第一遍执行到这里的时候由于 nexth 没有初始化，所以这里会阻塞(和notification有没有值没有关系，notification哪怕是nil也可以写入 chan interface{} 类型的 channel)

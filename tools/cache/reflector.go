@@ -51,8 +51,10 @@ type Reflector struct {
 	metrics *reflectorMetrics
 
 	// The type of object we expect to place in the store.
+	// reflector watch的资源类型
 	expectedType reflect.Type
 	// The destination to sync up with the watch source
+	// 其实就是DeltaFIFO
 	store Store
 	// listerWatcher is used to perform lists and watches.
 	listerWatcher ListerWatcher
@@ -118,6 +120,8 @@ var internalPackages = []string{"client-go/tools/cache/"}
 
 // Run starts a watch and handles watch events. Will restart the watch if it is closed.
 // Run will exit when stopCh is closed.
+
+//Reflector的启动方法
 func (r *Reflector) Run(stopCh <-chan struct{}) {
 	klog.V(3).Infof("Starting reflector %v (%s) from %s", r.expectedType, r.resyncPeriod, r.name)
 	wait.Until(func() {
@@ -253,6 +257,8 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		}
 	}()
 
+	// for循环来不停的watch
+	// client-go 的watch是通过一个for循环不停的watch的嘛, 这样不是对apiServer的压力很大吗？
 	for {
 		// give the stopCh a chance to stop the loop, even in case of continue statements further down on errors
 		select {
@@ -311,6 +317,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 }
 
 // syncWith replaces the store's items with the given list.
+// 将stores里原有的obj删除，用入参的list来代替
 func (r *Reflector) syncWith(items []runtime.Object, resourceVersion string) error {
 	found := make([]interface{}, 0, len(items))
 	for _, item := range items {
@@ -329,6 +336,7 @@ func (r *Reflector) watchHandler(w watch.Interface, resourceVersion *string, err
 	// we're coming back in with the same watch interface.
 	defer w.Stop()
 
+	//loop循环, 不停的从watch的ResultChan中获取event并处理
 loop:
 	for {
 		select {
@@ -336,7 +344,7 @@ loop:
 			return errorStopRequested
 		case err := <-errc:
 			return err
-		case event, ok := <-w.ResultChan():
+		case event, ok := <-w.ResultChan():		//从watch的ResultChan中获取event
 			if !ok {
 				break loop
 			}
@@ -354,7 +362,7 @@ loop:
 			}
 			newResourceVersion := meta.GetResourceVersion()
 			// 根据事件类型处理，有 Added Modified Deleted 3种
-			// 3 种事件分别对应 store 中的增改删操作
+			// 3 种事件分别对应 store(实际上是Controller中的Queue，也就是Delta_Fifo)中的增改删操作
 			switch event.Type {
 			case watch.Added:
 				err := r.store.Add(event.Object)

@@ -31,12 +31,15 @@ type Config struct {
 	// The queue for your objects - has to be a DeltaFIFO due to
 	// assumptions in the implementation. Your Process() function
 	// should accept the output of this Queue's Pop() method.
+	// 就是DeltaFIFO
 	Queue
 
 	// Something that can list and watch your objects.
+	// 一般而言也就是sharedInformer的listerWatcher方法
 	ListerWatcher
 
 	// Something that can process your objects.
+	// sharedInformer的HandleDeltas方法
 	Process ProcessFunc
 
 	// The type of your objects.
@@ -74,6 +77,7 @@ type ProcessFunc func(obj interface{}) error
 // Controller is a generic controller framework.
 type controller struct {
 	config         Config
+	//controller 中引用了Reflector
 	reflector      *Reflector
 	reflectorMutex sync.RWMutex
 	clock          clock.Clock
@@ -103,6 +107,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 		<-stopCh
 		c.config.Queue.Close()
 	}()
+	//Reflector是从Controller中启动的
 	r := NewReflector(
 		c.config.ListerWatcher,
 		c.config.ObjectType,
@@ -121,6 +126,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 
 	wg.StartWithChannel(stopCh, r.Run)
 
+	//这里启动processLoop方法
 	wait.Until(c.processLoop, time.Second, stopCh)
 }
 
@@ -145,6 +151,8 @@ func (c *controller) LastSyncResourceVersion() string {
 // actually exit when the controller is stopped. Or just give up on this stuff
 // ever being stoppable. Converting this whole package to use Context would
 // also be helpful.
+// 从DeltaFIFO中Pop出Event，并用sharedInformer的HandleDeltas方法来处理这些Event
+// 在HandleDeltas()中最终会调用用户定义的ResourceEventHandler来处理这些Event
 func (c *controller) processLoop() {
 	for {
 		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
@@ -276,6 +284,7 @@ func DeletionHandlingMetaNamespaceKeyFunc(obj interface{}) (string, error) {
 //    or you stop the controller).
 //  * h is the object you want notifications sent to.
 //
+// 该方法目前只有在test类中使用
 func NewInformer(
 	lw ListerWatcher,
 	objType runtime.Object,
