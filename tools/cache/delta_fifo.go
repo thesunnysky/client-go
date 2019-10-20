@@ -319,13 +319,13 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	}
 
 	newDeltas := append(f.items[id], Delta{actionType, obj})
-	newDeltas = dedupDeltas(newDeltas)
+	newDeltas = dedupDeltas(newDeltas)	//尝试将最新的两次delta合并
 
 	if len(newDeltas) > 0 {
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
 		}
-		f.items[id] = newDeltas
+		f.items[id] = newDeltas		//更新该key的deltas list
 		f.cond.Broadcast()
 	} else {
 		// We need to remove this from our map (extra items in the queue are
