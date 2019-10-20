@@ -61,7 +61,7 @@ func NewDeltaFIFO(keyFunc KeyFunc, knownObjects KeyListerGetter) *DeltaFIFO {
 		items:        map[string]Deltas{},
 		queue:        []string{},
 		keyFunc:      keyFunc,
-		knownObjects: knownObjects,
+		knownObjects: knownObjects,		//LocalStore
 	}
 	f.cond.L = &f.lock
 	return f
@@ -101,7 +101,7 @@ type DeltaFIFO struct {
 	// We depend on the property that items in the set are in
 	// the queue and vice versa, and that all Deltas in this
 	// map have at least one Delta.
-	items map[string]Deltas
+	items map[string]Deltas			//用来记录各个item的Delta List
 	// queue中记录了Delta中所有的key
 	queue []string
 
@@ -118,7 +118,7 @@ type DeltaFIFO struct {
 	// knownObjects list keys that are "known", for the
 	// purpose of figuring out which items have been deleted
 	// when Replace() or Delete() is called.
-	knownObjects KeyListerGetter
+	knownObjects KeyListerGetter //knownObjects实际就是LocalStore, 实际上使用时为Indexer
 
 	// Indication the queue is closed.
 	// Used to indicate a queue is closed so a control loop can exit when a queue is empty.

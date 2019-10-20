@@ -119,6 +119,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	var wg wait.Group
 	defer wg.Wait()
 
+	// 启动Reflector的ListAndWatch
 	wg.StartWithChannel(stopCh, r.Run)
 
 	wait.Until(c.processLoop, time.Second, stopCh)
@@ -147,6 +148,7 @@ func (c *controller) LastSyncResourceVersion() string {
 // also be helpful.
 func (c *controller) processLoop() {
 	for {
+		//从Reflector的DeltaFIFO中Pop event,然后通过PopProcessFunc处理,PopProcessFunc其实就是HandleDeltas方法
 		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
 		if err != nil {
 			if err == FIFOClosedError {
@@ -310,7 +312,7 @@ func NewIndexerInformer(
 	objType runtime.Object,
 	resyncPeriod time.Duration,
 	h ResourceEventHandler,
-	indexers Indexers,
+	indexers Indexers,		//也就是LocalStore
 ) (Indexer, Controller) {
 	// This will hold the client state, as we know it.
 	clientState := NewIndexer(DeletionHandlingMetaNamespaceKeyFunc, indexers)
@@ -337,7 +339,7 @@ func newInformer(
 	objType runtime.Object,
 	resyncPeriod time.Duration,
 	h ResourceEventHandler,
-	clientState Store,
+	clientState Store,		//LocalStore
 ) Controller {
 	// This will hold incoming changes. Note how we pass clientState in as a
 	// KeyLister, that way resync operations will result in the correct set
