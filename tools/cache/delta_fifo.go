@@ -102,6 +102,7 @@ type DeltaFIFO struct {
 	// the queue and vice versa, and that all Deltas in this
 	// map have at least one Delta.
 	items map[string]Deltas
+	// queue中记录了Delta中所有的key
 	queue []string
 
 	// populated is true if the first batch of items inserted by Replace() has been populated
@@ -423,16 +424,19 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 			f.cond.Wait()
 		}
 		id := f.queue[0]
+		//从queue中移除这个id
 		f.queue = f.queue[1:]
 		if f.initialPopulationCount > 0 {
 			f.initialPopulationCount--
 		}
+		//获取id所对应的Delta
 		item, ok := f.items[id]
 		if !ok {
 			// Item may have been deleted subsequently.
 			continue
 		}
 		delete(f.items, id)
+		// 作用仅仅是一个类型转换, 真正调用的方法是controller.config.Process, 也就是HandleDeltas()
 		err := process(item)
 		if e, ok := err.(ErrRequeue); ok {
 			f.addIfNotPresent(id, item)
@@ -530,6 +534,7 @@ func (f *DeltaFIFO) Resync() error {
 		return nil
 	}
 
+	// 获取当前deltaFIFO中所有object的key
 	keys := f.knownObjects.ListKeys()
 	for _, k := range keys {
 		if err := f.syncKeyLocked(k); err != nil {
@@ -564,6 +569,9 @@ func (f *DeltaFIFO) syncKeyLocked(key string) error {
 	if err != nil {
 		return KeyError{obj, err}
 	}
+	// 对应上面的注释:
+	// If we are doing Resync() and there is already an event queued for that object,
+	// we ignore the Resync for it.
 	if len(f.items[id]) > 0 {
 		return nil
 	}
