@@ -178,7 +178,7 @@ func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool
 }
 
 type sharedIndexInformer struct {
-	indexer    Indexer
+	indexer    Indexer	 // Informer的LocalStore
 	controller Controller
 
 	processor             *sharedProcessor

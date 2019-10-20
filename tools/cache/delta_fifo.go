@@ -61,7 +61,7 @@ func NewDeltaFIFO(keyFunc KeyFunc, knownObjects KeyListerGetter) *DeltaFIFO {
 		items:        map[string]Deltas{},
 		queue:        []string{},
 		keyFunc:      keyFunc,
-		knownObjects: knownObjects,		//LocalStore
+		knownObjects: knownObjects,		//LocalStore, 实际上是indexer
 	}
 	f.cond.L = &f.lock
 	return f
