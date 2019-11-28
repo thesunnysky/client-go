@@ -61,7 +61,7 @@ func NewDeltaFIFO(keyFunc KeyFunc, knownObjects KeyListerGetter) *DeltaFIFO {
 		items:        map[string]Deltas{},
 		queue:        []string{},
 		keyFunc:      keyFunc,
-		knownObjects: knownObjects,
+		knownObjects: knownObjects,		//LocalStore, 实际上是indexer
 	}
 	f.cond.L = &f.lock
 	return f
@@ -101,7 +101,8 @@ type DeltaFIFO struct {
 	// We depend on the property that items in the set are in
 	// the queue and vice versa, and that all Deltas in this
 	// map have at least one Delta.
-	items map[string]Deltas
+	items map[string]Deltas			//用来记录各个item的Delta List
+	// queue中记录了Delta中所有的key
 	queue []string
 
 	// populated is true if the first batch of items inserted by Replace() has been populated
@@ -117,7 +118,7 @@ type DeltaFIFO struct {
 	// knownObjects list keys that are "known", for the
 	// purpose of figuring out which items have been deleted
 	// when Replace() or Delete() is called.
-	knownObjects KeyListerGetter
+	knownObjects KeyListerGetter //knownObjects实际就是LocalStore, 实际上使用时为Indexer
 
 	// Indication the queue is closed.
 	// Used to indicate a queue is closed so a control loop can exit when a queue is empty.
@@ -318,13 +319,13 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	}
 
 	newDeltas := append(f.items[id], Delta{actionType, obj})
-	newDeltas = dedupDeltas(newDeltas)
+	newDeltas = dedupDeltas(newDeltas)	//尝试将最新的两次delta合并
 
 	if len(newDeltas) > 0 {
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
 		}
-		f.items[id] = newDeltas
+		f.items[id] = newDeltas		//更新该key的deltas list
 		f.cond.Broadcast()
 	} else {
 		// We need to remove this from our map (extra items in the queue are
@@ -424,16 +425,19 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 			f.cond.Wait()
 		}
 		id := f.queue[0]
+		//从queue中移除这个id
 		f.queue = f.queue[1:]
 		if f.initialPopulationCount > 0 {
 			f.initialPopulationCount--
 		}
+		//获取id所对应的Delta
 		item, ok := f.items[id]
 		if !ok {
 			// Item may have been deleted subsequently.
 			continue
 		}
 		delete(f.items, id)
+		// 作用仅仅是一个类型转换, 真正调用的方法是controller.config.Process, 也就是HandleDeltas()
 		err := process(item)
 		if e, ok := err.(ErrRequeue); ok {
 			f.addIfNotPresent(id, item)
@@ -531,6 +535,7 @@ func (f *DeltaFIFO) Resync() error {
 		return nil
 	}
 
+	// 获取当前deltaFIFO中所有object的key
 	keys := f.knownObjects.ListKeys()
 	for _, k := range keys {
 		if err := f.syncKeyLocked(k); err != nil {
@@ -565,6 +570,9 @@ func (f *DeltaFIFO) syncKeyLocked(key string) error {
 	if err != nil {
 		return KeyError{obj, err}
 	}
+	// 对应上面的注释:
+	// If we are doing Resync() and there is already an event queued for that object,
+	// we ignore the Resync for it.
 	if len(f.items[id]) > 0 {
 		return nil
 	}

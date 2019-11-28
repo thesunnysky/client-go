@@ -61,6 +61,11 @@ type Reflector struct {
 	// period controls timing between one watch ending and
 	// the beginning of the next one.
 	period       time.Duration
+	// Reflector的resync机制:
+	// 正常情况下只reflector watch到apiserver处某个resource发生了变化之后才会将该object加入到delta fifo中,进而进一步的触发informer的
+	// ResourceEventHandler方法对该resource的变化进行处理, reflector的resync机制会周期性的将localStore中的Resource放入到deltaFIFO中,
+	// 进行触发informer的ResourceEventHandler来对这些resource进一步sync,保证这些的resource的状态能得到及时的更新.
+	// 这么做的目的可能是为了防止Informer万一丢失(没有watch到)Resource的某次event的一种保护机制
 	resyncPeriod time.Duration
 	ShouldResync func() bool
 	// clock allows tests to manipulate time
@@ -96,6 +101,8 @@ func NewNamespaceKeyedIndexerAndReflector(lw ListerWatcher, expectedType interfa
 // is nil. If resyncPeriod is non-zero, then lists will be executed after every
 // resyncPeriod, so that you can use reflectors to periodically process everything as
 // well as incrementally processing the things that change.
+
+
 func NewReflector(lw ListerWatcher, expectedType interface{}, store Store, resyncPeriod time.Duration) *Reflector {
 	return NewNamedReflector(naming.GetNameFromCallsite(internalPackages...), lw, expectedType, store, resyncPeriod)
 }

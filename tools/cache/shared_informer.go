@@ -570,6 +570,7 @@ type processorListener struct {
 	// resyncPeriod is how frequently the listener wants a full resync from the shared informer. This
 	// value may differ from requestedResyncPeriod if the shared informer adjusts it to align with the
 	// informer's overall resync check period.
+	// listener 有一种resync机制, 会周期性的将sharedInformer中确定没有被删除的event重新加入到DeltaFIFO中
 	resyncPeriod time.Duration
 	// nextResync is the earliest time the listener should get a full resync
 	nextResync time.Time
@@ -642,7 +643,8 @@ func (p *processorListener) pop() {
 	}
 }
 
-//Ques: 这里的OnUpdate, OnAdd...方法只是来像controller的workqueue中添加event的,在具体的operator中实现的时候, 需要
+//主要是调用ResourceEventHandler方法来向相关的controller的workqueue中添加event
+//Ques: 这里的OnUpdate, OnAdd...方法只是来向controller的workqueue中添加event的, 在具体的operator中实现的时候, 需要
 //controller单独实现这个OnUpdate和OnAdd吗?
 func (p *processorListener) run() {
 	// this call blocks until the channel is closed.  When a panic happens during the notification
@@ -655,6 +657,7 @@ func (p *processorListener) run() {
 		// 一分钟内的又有几次重试
 		err := wait.ExponentialBackoff(retry.DefaultRetry, func() (bool, error) {
 			for next := range p.nextCh {
+				//调用ResourceEventHandler方法来向相关的controller的workqueue中添加event
 				switch notification := next.(type) {
 				case updateNotification:
 					p.handler.OnUpdate(notification.oldObj, notification.newObj)
