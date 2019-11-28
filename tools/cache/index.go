@@ -39,6 +39,7 @@ type Indexer interface {
 	// IndexKeys returns the set of keys that match on the named indexing function.
 	// indexKey是indexName索引类中一个索引键，函数返回indexKey指定的所有对象键
 	// 这个对象键是Indexer内唯一的，在添加的时候会计算，后面讲具体Indexer实例的会讲解
+	// indexKey表示的索引的值, 是indexName下的一个具体的索引值
 	IndexKeys(indexName, indexKey string) ([]string, error)
 
 	// ListIndexFuncValues returns the list of generated values of an Index func
@@ -60,6 +61,8 @@ type Indexer interface {
 
 // IndexFunc knows how to provide an indexed value for an object.
 // 计算索引的函数，传入对象，输出字符串索引，注意是数组
+// 每一个IndexFunc都有名字, 这个名字就代表了一个索引类, 这个索引类的索引值(indexValue)由这个IndexFunc计算得出,
+// 一个IndexFunc可以计算得出多个indexValue, 具体是要看IndexFunc的实现逻辑了
 type IndexFunc func(obj interface{}) ([]string, error)
 
 // IndexFuncToKeyFuncAdapter adapts an indexFunc to a keyFunc.  This is only useful if your index function returns
@@ -96,6 +99,9 @@ func MetaNamespaceIndexFunc(obj interface{}) ([]string, error) {
 
 // Index maps the indexed value to a set of keys in the store that match on that value
 // 每种计算索引的方式会输出多个索引(数组), 而多个目标可能会算出相同索引，所以就有了这个类型
+// 在store存储的是最原始的对象, 在k8s中, 满足同一个索引条件的对象往往有多个,
+// map的key是具体的某一个索引类(其实就是一个具体的索引名称), value是一个set, 这个set中元素是store中items的key
+// 通过这些key就能找到最原始的对象, 最终的效果就是找到了所有复合索引条件(索引类)的对象
 type Index map[string]sets.String
 
 // Indexers maps a name to a IndexFunc

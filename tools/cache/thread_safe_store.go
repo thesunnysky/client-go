@@ -35,6 +35,8 @@ import (
 // to a re-index. So it's not a good idea to directly modify the objects returned by
 // Get/List, in general.
 type ThreadSafeStore interface {
+	// 这里的key是通过keyFunc计算出来的obj存储在items中的key,是唯一的
+	// 所有的obj都是存储在items中的, 通过key可以唯一的索引到对应的obj
 	Add(key string, obj interface{})
 	Update(key string, obj interface{})
 	Delete(key string)
@@ -69,6 +71,7 @@ func (c *threadSafeMap) Add(key string, obj interface{}) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	oldObject := c.items[key]
+	// 先将obj存放到items中
 	c.items[key] = obj
 	c.updateIndices(oldObject, obj, key)
 }
@@ -248,6 +251,7 @@ func (c *threadSafeMap) AddIndexers(newIndexers Indexers) error {
 
 // updateIndices modifies the objects location in the managed indexes, if this is an update, you must provide an oldObj
 // updateIndices must be called from a function that already has a lock on the cache
+// 这里的key是通过keyFunc计算出来的obj存储在item中的key,是唯一的
 func (c *threadSafeMap) updateIndices(oldObj interface{}, newObj interface{}, key string) {
 	// if we got an old object, we need to remove it before we add it again
 	if oldObj != nil {
@@ -278,6 +282,7 @@ func (c *threadSafeMap) updateIndices(oldObj interface{}, newObj interface{}, ke
 // deleteFromIndices removes the object from each of the managed indexes
 // it is intended to be called from a function that already has a lock on the cache
 func (c *threadSafeMap) deleteFromIndices(obj interface{}, key string) {
+	//type Indexers map[string]IndexFunc
 	for name, indexFunc := range c.indexers {
 		indexValues, err := indexFunc(obj)
 		if err != nil {

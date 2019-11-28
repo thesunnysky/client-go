@@ -113,7 +113,7 @@ type cache struct {
 	// cacheStorage bears the burden of thread safety for the cache
 	cacheStorage ThreadSafeStore
 	// keyFunc is used to make the key for objects stored in and retrieved from items, and
-	// should be deterministic.
+	// should be deterministic(确定性的).
 	keyFunc KeyFunc
 }
 
@@ -121,6 +121,7 @@ var _ Store = &cache{}
 
 // Add inserts an item into the cache.
 func (c *cache) Add(obj interface{}) error {
+	// keyFunc将会计算出该object对应的在cache中存储的key是什么?
 	key, err := c.keyFunc(obj)
 	if err != nil {
 		return KeyError{obj, err}
