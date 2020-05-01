@@ -157,6 +157,7 @@ func (c *controller) LastSyncResourceVersion() string {
 func (c *controller) processLoop() {
 	for {
 		//从Reflector的DeltaFIFO中Pop event,然后通过PopProcessFunc处理,PopProcessFunc其实就是HandleDeltas方法
+		// c.config.Queue就是DeltaFIFO
 		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
 		if err != nil {
 			if err == FIFOClosedError {
@@ -353,6 +354,7 @@ func newInformer(
 	// This will hold incoming changes. Note how we pass clientState in as a
 	// KeyLister, that way resync operations will result in the correct set
 	// of update/delete deltas.
+	// 每一个informer都有自己的一个deltaFIFO
 	fifo := NewDeltaFIFO(MetaNamespaceKeyFunc, clientState)
 
 	cfg := &Config{

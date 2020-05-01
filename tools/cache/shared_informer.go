@@ -178,8 +178,9 @@ func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool
 }
 
 type sharedIndexInformer struct {
+	// 就是local cache
 	indexer    Indexer
-	//informer自己定义的一个controller，并不是k8s传统意义上的controller
+	// informer自己定义的一个controller，并不是k8s传统意义上的controller
 	// Controller中引用了Reflector
 	// controller中的Run()启动了Reflector，同时也启动了processLoop(),不停的从DeltaFIFO中获取event并调用
 	// informer的ResourceEventHandler来处理；
@@ -264,6 +265,9 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 
 		//core, sharedIndexInformer的HandleDeltas
 		//目前看到的比较中重要的调用是Controller.Run() -> processLoop() -> Process()
+		// func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error{}
+		// 对 obj(Delta) 更新到local中, 然后 distribute 对应的Add,Update,Delete事件,
+		// 最终将由ResourceEventHandler处理
 		Process: s.HandleDeltas,
 	}
 
@@ -412,7 +416,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 
 //core func
 // 更新sharedIndexInformer的indexer内存储的Obj
-//	这其中还包含了LocalStore和DeltaFIFO之间的resync机制
+// 这其中还包含了LocalStore和DeltaFIFO之间的resync机制
 // 将入参的ojb distributed， 最终将有informer的ResourceEventHandler方法处理（处理 add，update，delete）
 //called by:
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
@@ -429,24 +433,26 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 			// 更新的都是sharedIndexInformer.indexer
 			// 可以看到这里同时更新LocalStore和DeltaFIFO
 			if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
-				//update
+				// 更新local cache, update
 				if err := s.indexer.Update(d.Object); err != nil {
 					return err
 				}
 				//distribute event,最终将由ResourceEventHandler处理
 				s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
 			} else {
-				//add
+				// 将object add 到local cache中
 				if err := s.indexer.Add(d.Object); err != nil {
 					return err
 				}
+				//distribute event,最终将由ResourceEventHandler处理
 				s.processor.distribute(addNotification{newObj: d.Object}, isSync)
 			}
 		case Deleted:
-			//delete
+			//delete, 从local cache中删除该object
 			if err := s.indexer.Delete(d.Object); err != nil {
 				return err
 			}
+			//distribute event,最终将由ResourceEventHandler处理
 			s.processor.distribute(deleteNotification{oldObj: d.Object}, false)
 		}
 	}

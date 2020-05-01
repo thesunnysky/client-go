@@ -182,6 +182,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		var err error
 		listCh := make(chan struct{}, 1)
 		panicCh := make(chan interface{}, 1)
+		// 起一个goroutine执行List(), 后面部分还会有Watch()
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -206,6 +207,8 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			return nil
 		case r := <-panicCh:
 			panic(r)
+
+		// 等待list完成
 		case <-listCh:
 		}
 		if err != nil {
@@ -218,12 +221,14 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		}
 		resourceVersion = listMetaInterface.GetResourceVersion()
 		initTrace.Step("Resource version extracted")
+
 		// 提取 items
 		items, err := meta.ExtractList(list)
 		if err != nil {
 			return fmt.Errorf("%s: Unable to understand list result %#v (%v)", r.name, list, err)
 		}
 		initTrace.Step("Objects extracted")
+
 		// 更新存储(Delta FIFO)中的 items
 		if err := r.syncWith(items, resourceVersion); err != nil {
 			return fmt.Errorf("%s: Unable to sync list result: %v", r.name, err)
@@ -231,6 +236,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		initTrace.Step("SyncWith done")
 		r.setLastSyncResourceVersion(resourceVersion)
 		initTrace.Step("Resource version updated")
+
 		return nil
 	}(); err != nil {
 		return err

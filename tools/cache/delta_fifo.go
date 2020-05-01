@@ -259,14 +259,18 @@ func (f *DeltaFIFO) addIfNotPresent(id string, deltas Deltas) {
 
 // re-listing and watching can deliver the same update multiple times in any
 // order. This will combine the most recent two deltas if they are the same.
+// 尝试合并deltaFifo中最新的两个event
 func dedupDeltas(deltas Deltas) Deltas {
 	n := len(deltas)
 	if n < 2 {
 		return deltas
 	}
+	// a,b 是当前deltaFifo中最新的两个event
 	a := &deltas[n-1]
 	b := &deltas[n-2]
+	// 如果两个event相同,则进行合并
 	if out := isDup(a, b); out != nil {
+		// 将out放入到deltas[n-1]的位置
 		d := append(Deltas{}, deltas[:n-2]...)
 		return append(d, *out)
 	}
@@ -306,6 +310,7 @@ func (f *DeltaFIFO) willObjectBeDeletedLocked(id string) bool {
 // queueActionLocked appends to the delta list for the object.
 // Caller must lock first.
 func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) error {
+	// 计算对象的key
 	id, err := f.KeyOf(obj)
 	if err != nil {
 		return KeyError{obj, err}
@@ -314,18 +319,24 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	// If object is supposed to be deleted (last event is Deleted),
 	// then we should ignore Sync events, because it would result in
 	// recreation of this object.
+	// 如果一个object在deltaFIFo中的最后一个时间是Deleted, 则忽略该object的sync事件
 	if actionType == Sync && f.willObjectBeDeletedLocked(id) {
 		return nil
 	}
 
+	// 构建该object的Delta struct 并将其入队到 f.items 中
 	newDeltas := append(f.items[id], Delta{actionType, obj})
-	newDeltas = dedupDeltas(newDeltas)	//尝试将最新的两次delta合并
+
+	//尝试将最新的两次delta合并
+	newDeltas = dedupDeltas(newDeltas)
 
 	if len(newDeltas) > 0 {
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
 		}
 		f.items[id] = newDeltas		//更新该key的deltas list
+		// 唤醒等待中的informer->controller,informer的controller会在调用DeltaFIFO的Pop()方法时阻塞
+		// 每个informer都有自己的一个deltaFIFO,会有一个goroutine不停的从这个deltaFIFO中 pop Delta并处理
 		f.cond.Broadcast()
 	} else {
 		// We need to remove this from our map (extra items in the queue are
@@ -409,6 +420,7 @@ func (f *DeltaFIFO) IsClosed() bool {
 //
 // Pop returns a 'Deltas', which has a complete list of all the things
 // that happened to the object (deltas) while it was sitting in the queue.
+
 // Pop调用了PopProcessFunc, PopProcessFunc的本质上是调用了controller.config.Process,实际上是HandleDeltas()
 func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 	f.lock.Lock()
